@@ -1,0 +1,21 @@
+# https://taskfile.dev
+
+version: "3"
+
+vars:
+  GREETING: Hello, World!
+
+tasks:
+  default:
+    cmds:
+      - air
+    silent: true
+
+  stock:
+    cmd: go run ./apps/stock/main.go
+
+  purchase:
+    cmd: go run ./apps/purchase/purchase.go
+
+  noti:
+    cmd: go run ./apps/noti/noti.go
