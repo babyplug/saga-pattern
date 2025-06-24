@@ -23,25 +23,26 @@ var (
 )
 
 var checkStock = func(ctx *gin.Context) {
-	go func() {
-		order := model.Order{
-			ID:       uuid.NewString(),
-			ItemName: "watch",
-			Success:  true,
-		}
+	id := uuid.NewString()
 
-		msg := utils.CompressToJsonBytes(&order)
+	order := model.Order{
+		ID:       id,
+		ItemName: "watch",
+		Success:  true,
+	}
 
-		// Set timeout
-		_clientProducer.SetWriteDeadline(time.Now().Add(10 * time.Second))
-		_, err := _clientProducer.Write(msg)
-		if err != nil {
-			log.Fatal("failed to write messages:", err)
-		}
-	}()
+	msg := utils.CompressToJsonBytes(&order)
+	// Set timeout
+	_clientProducer.SetWriteDeadline(time.Now().Add(10 * time.Second))
+	_, err := _clientProducer.Write(msg)
+	if err != nil {
+		log.Fatal("failed to write messages:", err)
+	}
 
 	ctx.JSON(201, gin.H{
-		"message": "Send order done",
+		"message":  "Send order done",
+		"order_id": id,
+		"status":   "created",
 	})
 }
 
@@ -78,6 +79,11 @@ func main() {
 
 	router := gin.Default()
 	router.POST("/order", checkStock)
+	router.GET("/health", func(ctx *gin.Context) {
+		ctx.JSON(200, gin.H{
+			"status": "ok",
+		})
+	})
 
 	router.Run() // listen and serve on 0.0.0.0:8080
 }
