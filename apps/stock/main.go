@@ -34,7 +34,7 @@ func consume(topic client.TOPIC) {
 	reader := kafka.NewReader(kafka.ReaderConfig{
 		Brokers:     []string{"localhost:9092"},
 		Topic:       string(topic),
-		GroupID:    fmt.Sprintf("stock-consumer-group-%s", topic),
+		GroupID:     fmt.Sprintf("stock-consumer-group-%s", topic),
 		Partition:   0,
 		StartOffset: kafka.LastOffset,
 	})
@@ -42,16 +42,16 @@ func consume(topic client.TOPIC) {
 	defer reader.Close()
 
 	for {
-		message, err := reader.ReadMessage(context.Background())
+		message, err := reader.FetchMessage(context.Background())
 		if err != nil {
 			log.Printf("error reading message from %s: %v", topic, err)
-			break
+			continue
 		}
 		fmt.Printf("%s message from %s: %s = %s\n", time.Now().Format(time.DateTime), topic, string(message.Key), string(message.Value))
 		order := new(model.Order)
 		if err := json.Unmarshal(message.Value, order); err != nil {
 			log.Printf("error parse payload message from %s: %v", topic, err)
-			break
+			continue
 		}
 
 		switch topic {
@@ -59,6 +59,10 @@ func consume(topic client.TOPIC) {
 			go handlePurchaseFail(order)
 		default:
 			handleCheckStock(order)
+		}
+
+		if err := reader.CommitMessages(context.Background(), message); err != nil {
+			log.Printf("error committing message from %s: %v", topic, err)
 		}
 	}
 }
@@ -84,7 +88,7 @@ func handleCheckStock(order *model.Order) {
 
 func handlePurchase(order *model.Order) {
 	msg := utils.CompressToJsonBytes(order)
-	err := _clientProducer.WriteMessages(context.Background(), kafka.Message{Topic: string(client.TopicPurchase), Value: msg})
+	err := _clientProducer.WriteMessages(context.Background(), kafka.Message{Key: []byte(order.ID), Topic: string(client.TopicPurchase), Value: msg})
 	if err != nil {
 		log.Printf("error sending purchase order %s to topic %s: %v", order.ID, client.TopicPurchase, err)
 		return
@@ -96,7 +100,7 @@ func handleCheckStockFail(order *model.Order) {
 	order.Reason = "out of stock"
 	order.Success = false
 	msg := utils.CompressToJsonBytes(order)
-	err := _clientProducer.WriteMessages(context.Background(), kafka.Message{Topic: string(client.TopicCheckStockFail), Value: msg})
+	err := _clientProducer.WriteMessages(context.Background(), kafka.Message{Key: []byte(order.ID), Topic: string(client.TopicCheckStockFail), Value: msg})
 	if err != nil {
 		log.Printf("error sending check stock fail order %s to topic %s: %v", order.ID, client.TopicCheckStockFail, err)
 		return
@@ -122,8 +126,7 @@ func handlePurchaseFail(order *model.Order) {
 		log.Printf("reverted stock for item %s, current stock: %d", itemDB.Name, itemDB.Stock)
 	}
 
-	// _clientProducer.SetWriteDeadline(time.Now().Add(10 * time.Second))
-	err := _clientProducer.WriteMessages(context.Background(), kafka.Message{Topic: string(client.TopicCheckStockFail), Value: msg})
+	err := _clientProducer.WriteMessages(context.Background(), kafka.Message{Key: []byte(order.ID), Topic: string(client.TopicCheckStockFail), Value: msg})
 	if err != nil {
 		log.Printf("error sending purchase fail order %s to topic %s: %v", order.ID, client.TopicCheckStockFail, err)
 		return

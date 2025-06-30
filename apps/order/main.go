@@ -34,7 +34,11 @@ var checkStock = func(ctx *gin.Context) {
 	msg := utils.CompressToJsonBytes(&order)
 	// Set timeout
 	_clientProducer.SetWriteDeadline(time.Now().Add(10 * time.Second))
-	_, err := _clientProducer.Write(msg)
+	_, err := _clientProducer.WriteMessages(kafka.Message{
+		Topic: string(client.TopicCheckStock),
+		Key:   []byte(id),
+		Value: msg,
+	})
 	if err != nil {
 		log.Fatal("failed to write messages:", err)
 	}
@@ -56,13 +60,16 @@ func consume(topic client.TOPIC) {
 		StartOffset: kafka.LastOffset,
 	})
 	for {
-		// Set read deadline
-		msg, err := reader.ReadMessage(context.Background())
+		msg, err := reader.FetchMessage(context.Background())
 		if err != nil {
 			log.Printf("failed to read message: %v", err)
 			continue
 		}
 		fmt.Printf("%s message from %s: %s = %s\n", time.Now().Format(time.DateTime), topic, string(msg.Key), string(msg.Value))
+		err = reader.CommitMessages(context.Background(), msg)
+		if err != nil {
+			log.Printf("Error committing message topic %s: %v", topic, err)
+		}
 	}
 }
 

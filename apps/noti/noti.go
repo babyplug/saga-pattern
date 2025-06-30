@@ -9,6 +9,7 @@ import (
 	"saga/internal/model"
 	"saga/utils"
 
+	"github.com/avast/retry-go"
 	"github.com/segmentio/kafka-go"
 )
 
@@ -22,7 +23,7 @@ var (
 func consume() {
 	fmt.Println(TopicConsumer, "consumer ready...")
 	for {
-		message, err := _clientConsumer.ReadMessage(context.Background())
+		message, err := _clientConsumer.FetchMessage(context.Background())
 		if err != nil {
 			log.Printf("error reading message from %s: %v\n", TopicConsumer, err)
 			break
@@ -35,19 +36,30 @@ func consume() {
 			fmt.Printf("error unmarshalling message: %v\n", err)
 			continue
 		}
-		handleNotification(order)
+		if err = retry.Do(func() error {
+			return handleNotification(order)
+		}); err != nil {
+			log.Printf("error handling notification for order %s: %v\n", order.ID, err)
+			continue
+		}
+
+		if err := _clientConsumer.CommitMessages(context.Background(), message); err != nil {
+			log.Printf("error committing message from %s: %v\n", TopicConsumer, err)
+		}
 	}
 }
 
-func handleNotification(order *model.Order) {
+func handleNotification(order *model.Order) error {
 	order.Reason = "Order processed successfully"
 
 	msg := utils.CompressToJsonBytes(order)
 	_, err := _clientProducer.Write(msg)
 	if err != nil {
 		log.Printf("error sending notification  %s: %v\n", order.ID, err)
-		return
+		return err
 	}
+
+	return nil
 }
 
 func main() {
